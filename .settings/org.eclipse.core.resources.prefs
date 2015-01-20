@@ -1,3 +1,4 @@
 eclipse.preferences.version=1
 encoding/app.py=utf8
-encoding/main.py=utf8
+encoding/contacts.py=utf8
+encoding/facebook_data.py=utf-8
