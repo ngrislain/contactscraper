@@ -1,46 +1,56 @@
 #!/usr/bin/python
 # coding: utf-8
 
-import facebook
+import thread
 import urllib
 import urlparse
-import subprocess
 import warnings
+import webbrowser
+import BaseHTTPServer
+import json
+import facebook
+
 
 # Hide deprecation warnings. The facebook module isn't that up-to-date (facebook.GraphAPIError).
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
+class FacebookConnection(object):
+    # Create a connection object
+    def __init__(self):
+        self.app_id = '394484357378910'
+        self.app_secret = 'bafe107033d99381f63cfc97ffade902'
+        self.client_token = '56b8254aa1680260ed1c9b5e81c0fee0'
+        self.profile = json.load(urllib.urlopen('http://graph.facebook.com/nicolas.grislain'))
+        self.port = 8910
+        self.oauth_args = dict(client_id=self.app_id, client_secret=self.app_secret,
+                          redirect_uri='http://127.0.0.1:{}/'.format(self.port))
+    # Login 
+    def login(self):
+        def set_code(code):
+            self.oauth_args['code'] = code
+        # Define a local server to get the redirect
+        class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+            def do_GET(self):
+                query = urlparse.parse_qs(urlparse.urlparse(self.path).query)
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write("Authentication successful\n")
+                self.wfile.write(json.dumps(query))
+                if 'code' in query:
+                    set_code(query['code'][0])
+        httpd = BaseHTTPServer.HTTPServer(('', self.port), HTTPRequestHandler)
+        webbrowser.open('https://www.facebook.com/dialog/oauth?'+urllib.urlencode(self.oauth_args))
+        httpd.handle_request()
+        self.access_token = urlparse.parse_qs(urllib.urlopen('https://graph.facebook.com/oauth/access_token?'+urllib.urlencode(self.oauth_args)).read())['access_token'][0]
+    
+fc = FacebookConnection()
+fc.login()
+ 
+facebook_graph = facebook.GraphAPI(fc.access_token)
+profile = facebook_graph.get_object('me')
+friends = facebook_graph.get_connections('me', 'friends')
 
-# Parameters of your app and the id of the profile you want to mess with.
-FACEBOOK_APP_ID     = '394484357378910'
-FACEBOOK_APP_SECRET = 'bafe107033d99381f63cfc97ffade902'
-FACEBOOK_PROFILE_ID = '686606846'
+friend_list = [friend['name'] for friend in friends['data']]
 
-
-# Trying to get an access token. Very awkward.
-oauth_args = dict(client_id     = FACEBOOK_APP_ID,
-                  client_secret = FACEBOOK_APP_SECRET,
-                  grant_type    = 'client_credentials')
-oauth_curl_cmd = ['curl',
-                  'https://graph.facebook.com/oauth/access_token?' + urllib.urlencode(oauth_args)]
-oauth_response = subprocess.Popen(oauth_curl_cmd,
-                                  stdout = subprocess.PIPE,
-                                  stderr = subprocess.PIPE).communicate()[0]
-
-try:
-    oauth_access_token = urlparse.parse_qs(str(oauth_response))['access_token'][0]
-except KeyError:
-    print('Unable to grab an access token!')
-    exit()
-
-facebook_graph = facebook.GraphAPI(oauth_access_token)
-
-
-# Try to post something on the wall.
-try:
-    fb_response = facebook_graph.put_wall_post('Test', \
-                                               profile_id = FACEBOOK_PROFILE_ID)
-    print fb_response
-except facebook.GraphAPIError as e:
-    print 'Something went wrong:', e.type, e.message
-
+print friend_list
